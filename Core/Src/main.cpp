@@ -19,10 +19,17 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
+#define AXIS_NUMBER 9
+#define LEARNING_ITERATIONS 256
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
 #include "com.hpp"
+
+#include "NanoEdgeAI.h"
+#include "knowledge.h"
+#include "libneai.a"
 
 /* USER CODE END Includes */
 
@@ -70,6 +77,32 @@ int SENT = 0;
   */
 int main(void)
 {
+	// NanoEdge AI initialization
+	  enum neai_state error_code = neai_anomalydetection_init();
+	  uint8_t similarity = 0;
+
+	  if (error_code != NEAI_OK) {
+	    // Handle initialization error
+	    Serial.println("NanoEdge AI initialization failed");
+	    while (1); // Halt on error
+	  }
+
+	  // Learning process ----------------------------------------------------------
+	  for (uint16_t iteration = 0; iteration < LEARNING_ITERATIONS; iteration++) {
+	    fill_buffer(input_user_buffer);
+	    neai_anomalydetection_learn(input_user_buffer);
+	  }
+
+	  // Detection process
+	      fill_buffer(input_user_buffer);
+	      neai_anomalydetection_detect(input_user_buffer, &similarity);
+
+	      // Example of handling detection results
+	      if (similarity > SOME_THRESHOLD) {
+	        // Trigger actions based on similarity
+	        Serial.println("Anomaly detected!");
+	        // e.g., blink LED, ring alarm, etc.
+	      }
 
   /* USER CODE BEGIN 1 */
 
