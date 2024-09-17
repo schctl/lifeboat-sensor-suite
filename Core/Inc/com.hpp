@@ -11,10 +11,15 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "stm32f4xx_hal.h"
+
+#define WIFI_BOARD 7
+
 enum UserStatus {
 	Ok = 1,
 	Unhealthy = 2,
-	Critical = 3
+	Critical = 3,
+	Unknown = 4
 };
 
 typedef struct {
@@ -45,10 +50,25 @@ public:
 	Message(UserStatus status)
 		: type(MessageTypeIdx::UserStatusIdx), message(MessageType { .status = status }) {}
 
-	uint8_t serialize() {
+	HAL_StatusTypeDef send(I2C_HandleTypeDef* hi2c) {
+		HAL_StatusTypeDef status = HAL_OK;
+		uint16_t dev_addr = (uint16_t)(WIFI_BOARD) << 7;
+
+		status = HAL_I2C_IsDeviceReady(hi2c, dev_addr, 5, 100);
+
+		if (status == HAL_OK) {
+			uint16_t bytes = this->serialize();
+			status = HAL_I2C_Master_Transmit(hi2c, dev_addr, TX_BUF, bytes, 1000);
+		}
+
+		return status;
+	}
+
+private:
+	uint16_t serialize() {
 		memset(TX_BUF, 0, 64);
 
-		uint8_t ptr = 0;
+		uint16_t ptr = 0;
 
 		TX_BUF[ptr] = (uint8_t)(this->type); ptr++;
 
