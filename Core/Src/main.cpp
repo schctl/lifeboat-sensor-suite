@@ -18,6 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include <main.hpp>
+#include "NanoEdgeAI.h"
+#include "knowledge.h"
+#include "libneai.a"
+
+#define AXIS_NUMBER 9
+#define LEARNING_ITERATIONS 256
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -42,6 +48,29 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+void fill_buffer(float input_buffer[]) {
+  for (int i = 0; i < DATA_INPUT_USER; i++) {
+    // Fill buffer with sensor data
+	   float heartRate = readHeartRate();
+	   float spo2 = readSpO2();
+	   float temperature = readTemperature();
+	   float bp = readBP(); // Manual input
+	   float pulsePressure = calculatePulsePressure(bp, 80.0); // Example diastolic value
+	   float map = calculateMAP(bp, 80.0); // Example diastolic value
+	   float bmi = calculateBMI(70.0, 1.75); // Example weight and height
+
+	   input_buffer[i * AXIS_NUMBER] = heartRate;
+	           input_buffer[i * AXIS_NUMBER + 1] = spo2;
+	           input_buffer[i * AXIS_NUMBER + 2] = temperature;
+	           input_buffer[i * AXIS_NUMBER + 3] = pulsePressure;
+	           input_buffer[i * AXIS_NUMBER + 4] = map;
+	           input_buffer[i * AXIS_NUMBER + 5] = bmi;
+	           input_buffer[i * AXIS_NUMBER + 6] = manualBP; // Example of including BP manually
+	           input_buffer[i * AXIS_NUMBER + 7] = 0.0; // Placeholder for unused axis values
+	           input_buffer[i * AXIS_NUMBER + 8] = 0.0; // Placeholder for unused axis values
+    // Continue filling buffer as needed
+  }
+}
 
 /* USER CODE BEGIN PV */
 
@@ -64,6 +93,32 @@ void SystemClock_Config(void);
   */
 int main(void)
 {
+	// NanoEdge AI initialization
+	  enum neai_state error_code = neai_anomalydetection_init();
+	  uint8_t similarity = 0;
+
+	  if (error_code != NEAI_OK) {
+	    // Handle initialization error
+	    Serial.println("NanoEdge AI initialization failed");
+	    while (1); // Halt on error
+	  }
+
+	  // Learning process ----------------------------------------------------------
+	  for (uint16_t iteration = 0; iteration < LEARNING_ITERATIONS; iteration++) {
+	    fill_buffer(input_user_buffer);
+	    neai_anomalydetection_learn(input_user_buffer);
+	  }
+
+	  // Detection process
+	      fill_buffer(input_user_buffer);
+	      neai_anomalydetection_detect(input_user_buffer, &similarity);
+
+	      // Example of handling detection results
+	      if (similarity > SOME_THRESHOLD) {
+	        // Trigger actions based on similarity
+	        Serial.println("Anomaly detected!");
+	        // e.g., blink LED, ring alarm, etc.
+	      }
 
   /* USER CODE BEGIN 1 */
 
