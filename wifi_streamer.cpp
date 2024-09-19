@@ -1,18 +1,13 @@
-/*
- * com.hpp
- *
- *  Created on: Sep 16, 2024
- *      Author: sachin
- */
+#include <Wire.h>
+#include <stdint.h>
+
+// --------------------------------------------------
 
 #ifndef INC_COM_HPP_
 #define INC_COM_HPP_
 
 #include <stdint.h>
 #include <string.h>
-
-#include "stm32f4xx_hal.h"
-#include "stm32f4xx_hal_uart.h"
 
 // STM -> ESP messages
 
@@ -54,9 +49,6 @@ enum MessageTypeIdx {
 uint8_t TX_BUF[64] = { 0 };
 uint8_t RX_BUF[64] = { 0 };
 
-HAL_StatusTypeDef RX_STATUS_LEN = HAL_OK;
-HAL_StatusTypeDef RX_STATUS_MSG = HAL_OK;
-
 class Message {
 public:
 	MessageTypeIdx type;
@@ -79,18 +71,17 @@ public:
 
 	// ------------------------------------------------
 
-	HAL_StatusTypeDef send(UART_HandleTypeDef* huart) {
+	void send(void) {
 		uint16_t bytes = this->serialize(TX_BUF + 1);
 		TX_BUF[0] = bytes;
-		HAL_StatusTypeDef status = HAL_UART_Transmit(huart, TX_BUF, bytes + 1, 1000);
-
-		return status;
+		Serial1.write(TX_BUF, TX_BUF[0] + 1);
 	}
 
-	Message receive(UART_HandleTypeDef* huart) {
+	Message receive(void) {
 		uint8_t len = 0;
 		Message msg;
 
+    /*
 		RX_STATUS_LEN = HAL_UART_Receive(huart, &len, 1, 100);
 		if (RX_STATUS_LEN == HAL_OK)
 		{
@@ -101,6 +92,7 @@ public:
 				memset(RX_BUF, 0, len);
 			}
 		}
+    */
 
 		return msg;
 	}
@@ -151,3 +143,37 @@ private:
 };
 
 #endif /* INC_COM_HPP_ */
+
+// --------------------------------------------------
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  while (!Serial);
+
+  Serial1.begin(115200);
+  while (!Serial1);
+}
+
+void recvUserStatus() {
+  uint8_t buf[64] = { 0 };
+
+  while (Serial1.available()) {
+    uint8_t len = Serial1.read();
+    Serial1.readBytes(buf, len);
+
+    for (int i = 0; i < len; i++) {
+      Serial.print(buf[i]);
+      Serial.print(" ");
+    }
+    Serial.println();
+  }
+
+  Message msg = Message::deserialize(buf);
+}
+
+void loop() {
+  recvUserStatus();
+  delay(100);
+
+}
