@@ -19,17 +19,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
-#define AXIS_NUMBER 9
-#define LEARNING_ITERATIONS 256
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
 #include "com.hpp"
-
-#include "NanoEdgeAI.h"
-#include "knowledge.h"
-#include "libneai.a"
 
 /* USER CODE END Includes */
 
@@ -49,7 +42,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c1;
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
@@ -58,7 +51,7 @@ I2C_HandleTypeDef hi2c1;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_I2C1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -69,6 +62,8 @@ static void MX_I2C1_Init(void);
 HAL_StatusTypeDef FLAG = HAL_OK;
 int SENT = 0;
 
+Message msg;
+
 /* USER CODE END 0 */
 
 /**
@@ -77,32 +72,6 @@ int SENT = 0;
   */
 int main(void)
 {
-	// NanoEdge AI initialization
-	  enum neai_state error_code = neai_anomalydetection_init();
-	  uint8_t similarity = 0;
-
-	  if (error_code != NEAI_OK) {
-	    // Handle initialization error
-	    Serial.println("NanoEdge AI initialization failed");
-	    while (1); // Halt on error
-	  }
-
-	  // Learning process ----------------------------------------------------------
-	  for (uint16_t iteration = 0; iteration < LEARNING_ITERATIONS; iteration++) {
-	    fill_buffer(input_user_buffer);
-	    neai_anomalydetection_learn(input_user_buffer);
-	  }
-
-	  // Detection process
-	      fill_buffer(input_user_buffer);
-	      neai_anomalydetection_detect(input_user_buffer, &similarity);
-
-	      // Example of handling detection results
-	      if (similarity > SOME_THRESHOLD) {
-	        // Trigger actions based on similarity
-	        Serial.println("Anomaly detected!");
-	        // e.g., blink LED, ring alarm, etc.
-	      }
 
   /* USER CODE BEGIN 1 */
 
@@ -126,10 +95,10 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_I2C1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
-
+  HAL_UART_Init(&huart2);
 
   /* USER CODE END 2 */
 
@@ -140,8 +109,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  Message msg = Message(UserStatus::Ok);
-	  FLAG = msg.send(&hi2c1);
+
+	    	  if (SENT)
+	    		  msg = Message(UserStatus::Ok);
+	    	  else
+	    		  msg = Message(BpmReading { .bpm = 128 });
+
+	    	  FLAG = msg.send(&huart2);
+
+	    	  msg = Message::deserialize(RX_BUF);
 
 	  SENT = !SENT;
 	  HAL_Delay(500);
@@ -195,36 +171,35 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief I2C1 Initialization Function
+  * @brief USART2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_I2C1_Init(void)
+static void MX_USART2_UART_Init(void)
 {
 
-  /* USER CODE BEGIN I2C1_Init 0 */
+  /* USER CODE BEGIN USART2_Init 0 */
 
-  /* USER CODE END I2C1_Init 0 */
+  /* USER CODE END USART2_Init 0 */
 
-  /* USER CODE BEGIN I2C1_Init 1 */
+  /* USER CODE BEGIN USART2_Init 1 */
 
-  /* USER CODE END I2C1_Init 1 */
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.ClockSpeed = 100000;
-  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN I2C1_Init 2 */
+  /* USER CODE BEGIN USART2_Init 2 */
 
-  /* USER CODE END I2C1_Init 2 */
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -235,6 +210,7 @@ static void MX_I2C1_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 /* USER CODE BEGIN MX_GPIO_Init_1 */
 /* USER CODE END MX_GPIO_Init_1 */
 
@@ -242,6 +218,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pins : PB8 PB9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */

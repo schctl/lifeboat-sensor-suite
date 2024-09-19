@@ -12,8 +12,9 @@
 #include <string.h>
 
 #include "stm32f4xx_hal.h"
+#include "stm32f4xx_hal_uart.h"
 
-#define WIFI_BOARD 7
+// STM -> ESP messages
 
 enum UserStatus {
 	Ok = 1,
@@ -26,23 +27,42 @@ typedef struct {
 	uint8_t buf[8];
 } Ping;
 
+// ESP -> STM messages
+
+typedef struct {
+	uint8_t bpm;
+} BpmReading;
+
+// ----------- Generic Message Ser/De implementation ----------------
+
 union MessageType {
+	// STM -> ESP messages
 	UserStatus status;
 	Ping ping;
+	// ESP -> STM messages
+	BpmReading bpm;
 };
 
 enum MessageTypeIdx {
+	// STM -> ESP messages
 	UserStatusIdx = 1,
-	PingIdx = 2
+	PingIdx = 2,
+	// ESP -> STM messages
+	BpmReadIdx = 3,
 };
 
 uint8_t TX_BUF[64] = { 0 };
 uint8_t RX_BUF[64] = { 0 };
 
+HAL_StatusTypeDef RX_STATUS_LEN = HAL_OK;
+HAL_StatusTypeDef RX_STATUS_MSG = HAL_OK;
+
 class Message {
 public:
 	MessageTypeIdx type;
 	MessageType message;
+
+	// -----------------------------------------------
 
 	Message(Ping ping)
 		: type(MessageTypeIdx::PingIdx), message(MessageType { .ping = ping }) {}
@@ -50,33 +70,82 @@ public:
 	Message(UserStatus status)
 		: type(MessageTypeIdx::UserStatusIdx), message(MessageType { .status = status }) {}
 
-	HAL_StatusTypeDef send(I2C_HandleTypeDef* hi2c) {
-		HAL_StatusTypeDef status = HAL_OK;
-		uint16_t dev_addr = (uint16_t)(WIFI_BOARD) << 7;
+	Message(BpmReading bpm)
+			: type(MessageTypeIdx::BpmReadIdx), message(MessageType { .bpm = bpm }) {}
 
-		status = HAL_I2C_IsDeviceReady(hi2c, dev_addr, 5, 100);
+	// default constructor
 
-		if (status == HAL_OK) {
-			uint16_t bytes = this->serialize();
-			status = HAL_I2C_Master_Transmit(hi2c, dev_addr, TX_BUF, bytes, 1000);
-		}
+	Message() : type(MessageTypeIdx::UserStatusIdx), message(MessageType { .status = UserStatus::Unknown }) {}
 
+	// ------------------------------------------------
+
+	HAL_StatusTypeDef send(UART_HandleTypeDef* huart) {
+		uint16_t bytes = this->serialize(TX_BUF + 1);
+		TX_BUF[0] = bytes;
+		HAL_StatusTypeDef status = HAL_UART_Transmit(huart, TX_BUF, bytes + 1, 1000);
+		memset(RX_BUF, 0, 64);
+		memcpy(RX_BUF, TX_BUF + 1, bytes);
+		memset(TX_BUF, 0, bytes + 1);
 		return status;
 	}
 
-private:
-	uint16_t serialize() {
-		memset(TX_BUF, 0, 64);
+	Message receive(UART_HandleTypeDef* huart) {
+		uint8_t len = 0;
+		Message msg;
 
+		RX_STATUS_LEN = HAL_UART_Receive(huart, &len, 1, 100);
+		if (RX_STATUS_LEN == HAL_OK)
+		{
+			RX_STATUS_MSG = HAL_UART_Receive(huart, RX_BUF, len, 1000);
+
+			if (RX_STATUS_MSG == HAL_OK) {
+				msg = Message::deserialize(RX_BUF);
+				memset(RX_BUF, 0, len);
+			}
+		}
+
+		return msg;
+	}
+
+	static Message deserialize(uint8_t* buffer) {
+	    uint16_t ptr = 0;
+	    MessageType msg;
+
+	    MessageTypeIdx command = (MessageTypeIdx)(buffer[ptr]); ptr++;
+
+	    switch (command) {
+	    // STM -> ESP messages
+	    case MessageTypeIdx::PingIdx:
+	      memcpy(&msg.ping.buf, buffer + ptr, 8); ptr += 8;
+	      return Message(msg.ping);
+	    case MessageTypeIdx::UserStatusIdx:
+	      msg.status = (UserStatus)(buffer[ptr]); ptr++;
+	      return Message(msg.status);
+	    // ESP -> STM messages
+	    case MessageTypeIdx::BpmReadIdx:
+	    	msg.bpm = BpmReading { .bpm = buffer[ptr] }; ptr++;
+	    	return Message(msg.bpm);
+	    }
+
+	    msg.status = UserStatus::Unknown;
+	    return Message(msg.status);
+	  }
+
+private:
+	uint16_t serialize(uint8_t* buf) {
 		uint16_t ptr = 0;
 
-		TX_BUF[ptr] = (uint8_t)(this->type); ptr++;
+		buf[ptr] = (uint8_t)(this->type); ptr++;
 
 		switch (this->type) {
+		// STM -> ESP messages
 		case MessageTypeIdx::PingIdx:
-			memcpy(TX_BUF, this->message.ping.buf, 8); ptr += 8;
+			memcpy(buf + ptr, this->message.ping.buf, 8); ptr += 8;
 		case MessageTypeIdx::UserStatusIdx:
-			TX_BUF[ptr] = (uint8_t)(this->message.status); ptr++;
+			buf[ptr] = (uint8_t)(this->message.status); ptr++;
+		// ESP -> STM messages
+		case MessageTypeIdx::BpmReadIdx:
+			buf[ptr] = this->message.bpm.bpm; ptr++;
 		}
 
 		return ptr;
