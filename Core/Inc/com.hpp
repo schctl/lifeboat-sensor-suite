@@ -54,6 +54,8 @@ enum MessageTypeIdx {
 uint8_t TX_BUF[64] = { 0 };
 uint8_t RX_BUF[64] = { 0 };
 
+uint8_t LEN = 0;
+
 HAL_StatusTypeDef RX_STATUS_LEN = HAL_OK;
 HAL_StatusTypeDef RX_STATUS_MSG = HAL_OK;
 
@@ -87,18 +89,18 @@ public:
 		return status;
 	}
 
-	Message receive(UART_HandleTypeDef* huart) {
-		uint8_t len = 0;
+	static Message receive(UART_HandleTypeDef* huart) {
+		LEN = 0;
 		Message msg;
 
-		RX_STATUS_LEN = HAL_UART_Receive(huart, &len, 1, 100);
+		RX_STATUS_LEN = HAL_UART_Receive(huart, &LEN, 1, 100);
 		if (RX_STATUS_LEN == HAL_OK)
 		{
-			RX_STATUS_MSG = HAL_UART_Receive(huart, RX_BUF, len, 1000);
+			RX_STATUS_MSG = HAL_UART_Receive(huart, RX_BUF, LEN, 1000);
 
 			if (RX_STATUS_MSG == HAL_OK) {
 				msg = Message::deserialize(RX_BUF);
-				memset(RX_BUF, 0, len);
+				memset(RX_BUF, 0, LEN);
 			}
 		}
 
@@ -139,11 +141,14 @@ private:
 		// STM -> ESP messages
 		case MessageTypeIdx::PingIdx:
 			memcpy(buf + ptr, this->message.ping.buf, 8); ptr += 8;
+			break;
 		case MessageTypeIdx::UserStatusIdx:
 			buf[ptr] = (uint8_t)(this->message.status); ptr++;
+			break;
 		// ESP -> STM messages
 		case MessageTypeIdx::BpmReadIdx:
 			buf[ptr] = this->message.bpm.bpm; ptr++;
+			break;
 		}
 
 		return ptr;
