@@ -71,7 +71,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   memset(RX_BUF, 0, 64);
   HAL_UART_Receive_DMA(&huart1, RX_BUF, 64); //You need to toggle a breakpoint on this line!
 }
-/* USER CODE END 4 */
+
+HAL_StatusTypeDef status;
 
 /* USER CODE END 0 */
 
@@ -119,6 +120,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+	  msg = Message(UserStatus::Critical);
+	  status = msg.send(&huart1);
 
 	  // msg = Message::receive(&huart1);
   }

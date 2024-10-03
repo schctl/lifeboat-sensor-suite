@@ -1,15 +1,7 @@
-#include <Wire.h>
-#include <stdint.h>
-
-// --------------------------------------------------
-
-#ifndef INC_COM_HPP_
-#define INC_COM_HPP_
-
 #include <stdint.h>
 #include <string.h>
 
-// STM -> ESP messages
+UART mySerial(digitalPinToPinName(3), digitalPinToPinName(2));
 
 enum UserStatus {
 	Ok = 1,
@@ -49,6 +41,11 @@ enum MessageTypeIdx {
 uint8_t TX_BUF[64] = { 0 };
 uint8_t RX_BUF[64] = { 0 };
 
+uint8_t LEN = 0;
+
+int RX_STATUS_LEN = 0;
+int RX_STATUS_MSG = 0;
+
 class Message {
 public:
 	MessageTypeIdx type;
@@ -71,28 +68,25 @@ public:
 
 	// ------------------------------------------------
 
-	void send(void) {
+	int send() {
 		uint16_t bytes = this->serialize(TX_BUF + 1);
 		TX_BUF[0] = bytes;
-		Serial1.write(TX_BUF, TX_BUF[0] + 1);
+		int status = mySerial.write(TX_BUF, bytes + 1);
+
+		return status;
 	}
 
-	Message receive(void) {
-		uint8_t len = 0;
+	static Message receive() {
+		LEN = 0;
 		Message msg;
 
-    /*
-		RX_STATUS_LEN = HAL_UART_Receive(huart, &len, 1, 100);
-		if (RX_STATUS_LEN == HAL_OK)
-		{
-			RX_STATUS_MSG = HAL_UART_Receive(huart, RX_BUF, len, 1000);
+    if (mySerial.available()) {
+      int bytes = mySerial.read();
 
-			if (RX_STATUS_MSG == HAL_OK) {
-				msg = Message::deserialize(RX_BUF);
-				memset(RX_BUF, 0, len);
-			}
-		}
-    */
+      mySerial.readBytes(RX_BUF, bytes);
+      msg = Message::deserialize(RX_BUF);
+      memset(RX_BUF, 0, bytes);
+    }
 
 		return msg;
 	}
@@ -131,49 +125,34 @@ private:
 		// STM -> ESP messages
 		case MessageTypeIdx::PingIdx:
 			memcpy(buf + ptr, this->message.ping.buf, 8); ptr += 8;
+			break;
 		case MessageTypeIdx::UserStatusIdx:
 			buf[ptr] = (uint8_t)(this->message.status); ptr++;
+			break;
 		// ESP -> STM messages
 		case MessageTypeIdx::BpmReadIdx:
 			buf[ptr] = this->message.bpm.bpm; ptr++;
+			break;
 		}
 
 		return ptr;
 	}
 };
 
-#endif /* INC_COM_HPP_ */
-
-// --------------------------------------------------
-
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
   while (!Serial);
 
-  Serial1.begin(115200);
-  while (!Serial1);
-}
+  mySerial.begin(9600);
+  while (!mySerial);
 
-void recvUserStatus() {
-  uint8_t buf[64] = { 0 };
-
-  while (Serial1.available()) {
-    uint8_t len = Serial1.read();
-    Serial1.readBytes(buf, len);
-
-    for (int i = 0; i < len; i++) {
-      Serial.print(buf[i]);
-      Serial.print(" ");
-    }
-    Serial.println();
-  }
-
-  Message msg = Message::deserialize(buf);
 }
 
 void loop() {
-  recvUserStatus();
-  delay(100);
+  // put your main code here, to run repeatedly:
 
+    Serial.println(Message::receive().message.status);
+  
+  delay(100);
 }
