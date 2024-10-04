@@ -53,6 +53,15 @@ void loop() {
         Serial.print(pox.getSpO2());
         Serial.println("%");
 
+        Serial.swap();
+        Serial.print(pox.getHeartRate());
+        Serial.print(",");
+        Serial.print(35);
+        Serial.print(",");
+        Serial.print(pox.getSpO2());
+        Serial.print(",");
+        Serial.println("131,78,68,0.0,53,28.82106941,95.66666667");
+
         tsLastReport = millis();
     }
 }
