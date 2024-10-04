@@ -22,7 +22,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-#include "com.hpp"
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "NanoEdgeAI.h"
+#include "knowledge.h"
 
 /* USER CODE END Includes */
 
@@ -64,15 +69,73 @@ static void MX_USART1_UART_Init(void);
 HAL_StatusTypeDef FLAG = HAL_OK;
 int SENT = 0;
 
-Message msg;
+uint8_t TX_BUF[64];
+uint8_t RX_BUF[64];
+char processing[128];
+size_t unprocessed = 0;
+
+char hi[32];
+
+float sensor_readings[12];
+
+float* sensor_readings_buf() {
+	return (float*)(&sensor_readings);
+}
+
+int process_received(char* str) {
+	char* tok;
+
+	if (strlen(str) == 0) {
+		return 1;
+	}
+
+	memset(hi, 0, 32);
+	memcpy(hi, str, strlen(str));
+
+	if ((*(str + strlen(str) - 1)) == '\r') {
+		char* ptr = str;
+		for (int i = 0; i < 12; i++) {
+			tok = strtok(ptr, ",");
+			sensor_readings[i] = atof(tok);
+			ptr = NULL;
+		}
+
+		tok = strtok(NULL, ",");
+
+		return 1;
+	}
+
+	return 0;
+}
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+  memcpy(processing + unprocessed, RX_BUF, 63);
   memset(RX_BUF, 0, 64);
-  HAL_UART_Receive_DMA(&huart1, RX_BUF, 64); //You need to toggle a breakpoint on this line!
+
+  size_t aggr = 0;
+  char* tok = strtok(processing, "\n");
+
+  while (tok != NULL) {
+	  aggr += strlen(tok) + 1;
+
+	  if (process_received(tok))
+		  tok = strtok(processing + aggr, "\n");
+
+	  else {
+		  unprocessed = strlen(tok);
+		  memset(processing, 0, 128);
+		  memcpy(processing, hi, unprocessed);
+		  break;
+	  }
+  }
+
+  HAL_UART_Receive_DMA(&huart1, RX_BUF, 63); //You need to toggle a breakpoint on this line!
 }
 
-HAL_StatusTypeDef status;
+HAL_StatusTypeDef TX_STATUS;
+
+float sensor_readings_at[12];
 
 /* USER CODE END 0 */
 
@@ -82,6 +145,7 @@ HAL_StatusTypeDef status;
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -109,7 +173,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   HAL_UART_Init(&huart1);
-  HAL_UART_Receive_DMA(&huart1, RX_BUF, 64);
+  HAL_UART_Receive_DMA(&huart1, RX_BUF, 63);
+
+  neai_anomalydetection_init();
+  neai_anomalydetection_knowledge(knowledge);
 
   /* USER CODE END 2 */
 
@@ -121,10 +188,15 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  msg = Message(UserStatus::Critical);
-	  status = msg.send(&huart1);
+	  memcpy(sensor_readings_at, sensor_readings, 12 * sizeof(float));
 
-	  // msg = Message::receive(&huart1);
+	  uint8_t similarity = 0;
+	  neai_anomalydetection_detect((float*)(&sensor_readings_at), &similarity);
+
+	  memset(TX_BUF, 0, 64);
+	  int bytes = snprintf((char* )TX_BUF, 64, "%d\r\n", (int)similarity);
+
+	  TX_STATUS = HAL_UART_Transmit(&huart1, TX_BUF, bytes, 100);
   }
   /* USER CODE END 3 */
 }
